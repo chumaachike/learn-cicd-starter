@@ -5,42 +5,32 @@ on:
     branches: [main]
 
 jobs:
-  Deploy:
+  deploy:
+    name: Deploy
     runs-on: ubuntu-latest
-
-    env:
-      PROJECT_ID: notely-473517
-      REGION: us-central1
-      REPO: notely-ar-repo
-      IMAGE: notely
-      IMAGE_URI: us-central1-docker.pkg.dev/notely-473517/notely-ar-repo/notely
-      SHA_TAG: ${{ github.sha }}
 
     steps:
       - name: Check out code
         uses: actions/checkout@v4
 
-      # Authenticate to GCP with your JSON key secret
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.1"
+
+      - name: Build app
+        run: ./scripts/buildprod.sh
+
       - id: auth
-        name: Auth to Google Cloud (JSON key)
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS }}
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
+        uses: google-github-actions/setup-gcloud@v2
 
-      - name: Set project
-        run: gcloud config set project "$PROJECT_ID"
-
-      # This is the required step the checker looks for:
-      - name: Build & push with Cloud Build
-        run: |
-          gcloud builds submit \
-            --tag "$IMAGE_URI:$SHA_TAG" \
-            --tag "$IMAGE_URI:latest" \
-            .
-
-      # Optional: show info for debugging
-      - name: gcloud info
+      - name: Use gcloud CLI
         run: gcloud info
+
+      - name: Build and push Docker image
+        run: gcloud builds submit --tag REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/IMAGE:TAG .
