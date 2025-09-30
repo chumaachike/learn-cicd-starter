@@ -1,3 +1,5 @@
+name: Build & Push to Artifact Registry
+
 on:
   push:
     branches: [main]
@@ -7,20 +9,60 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
 
+    env:
+      REGION: us-central1
+      PROJECT_ID: notely-473517
+      REPO: notely-ar-repo
+      IMAGE: notely
+      SHA_TAG: ${{ github.sha }}
+      REG_HOST: us-central1-docker.pkg.dev
+      IMAGE_URI: us-central1-docker.pkg.dev/notely-473517/notely-ar-repo/notely
+
     steps:
-    - name: check out code 
-      uses: actions/checkout@v4
+      - name: Check out code
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: "1.25.1"
-      
-    - name: Install dependencies
-      run: go mod download
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # If 1.25.1 isn't available, use an existing version or "stable"
+          go-version: "stable"
 
-    - name: Build
-      run: scripts/buildprod.sh
+      - name: Install dependencies
+        run: go mod download
 
+      - name: Build
+        run: scripts/buildprod.sh
 
- 
+      # --- GCP auth + SDK ---
+      - id: auth
+        name: Auth to Google Cloud (JSON key)
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Set project (defensive)
+        run: gcloud config set project "$PROJECT_ID"
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "$REG_HOST" --quiet
+
+      # --- Build & Push Docker image ---
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t "$IMAGE_URI:$SHA_TAG" \
+            -t "$IMAGE_URI:latest" \
+            .
+
+      - name: Push Docker image (SHA + latest)
+        run: |
+          docker push "$IMAGE_URI:$SHA_TAG"
+          docker push "$IMAGE_URI:latest"
+
+      # Optional sanity step
+      - name: Show gcloud info
+        run: gcloud info
